@@ -1,6 +1,6 @@
 package com.example.myapplication2
-import androidx.annotation.OptIn
-import androidx.media3.common.util.UnstableApi
+
+import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Bundle
@@ -9,20 +9,16 @@ import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
 import android.widget.ImageButton
+import androidx.annotation.OptIn
 import androidx.fragment.app.FragmentActivity
 import androidx.media3.common.MediaItem
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.DefaultTimeBar
 import androidx.media3.ui.TimeBar
+import com.bumptech.glide.Glide
 import com.example.myapplication2.databinding.ActivityMainBinding
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-
 
 //last and best approach
 
@@ -33,14 +29,9 @@ class MainActivity : FragmentActivity() {
     private var retriever: MediaMetadataRetriever = MediaMetadataRetriever()
     private var totalDuration: Int = 0
     private var videoUrl: String? = null
-    private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var currentJob: Job? = null
-    private var lastUpdate: Long = 0
-    private val handler = Handler(Looper.getMainLooper())  // Handler for periodic checks
-    private val visibilityCheckRunnable = Runnable {
-        checkControlsVisibility()
-    }
-
+    private var currentThread: Thread? = null
+    private var lastUpdateTime: Long = 0
     @OptIn(UnstableApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,33 +48,11 @@ class MainActivity : FragmentActivity() {
         exoplayer.setMediaItem(mediaItem)
         exoplayer.prepare()
         exoplayer.play()
-        startVisibilityChecks()
-        binding.playerView.findViewById<DefaultTimeBar>(R.id.exo_progress)
-            .addListener(object : TimeBar.OnScrubListener {
-                override fun onScrubStart(timeBar: TimeBar, position: Long) {
-                    exoplayer.pause()
-                    thumbnailPosition(position)
-                    updateScrub(position)
-
-                }
-
-                override fun onScrubMove(timeBar: TimeBar, position: Long) {
-                    exoplayer.pause()
-                    thumbnailPosition(position)
-                    updateScrub(position)
-
-                }
-
-                override fun onScrubStop(timeBar: TimeBar, position: Long, canceled: Boolean) {
-                    exoplayer.pause()
-                    thumbnailPosition(position)
-                    updateScrub(position)
-
-                }
-            })
+        initializer()
         binding.playerView.findViewById<ImageButton>(R.id.exo_play_pause).setOnClickListener {
             if (binding.previewImage.visibility == View.VISIBLE || !exoplayer.isPlaying) {
                 binding.previewImage.visibility = View.GONE
+                exoplayer.prepare()
                 exoplayer.play()
                 binding.playerView.findViewById<ImageButton>(R.id.exo_play_pause)
                     .setImageResource(androidx.media3.ui.R.drawable.exo_ic_play_circle_filled)
@@ -95,17 +64,33 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    override fun onKeyLongPress(keyCode: Int, event: KeyEvent?): Boolean {
-        currentJob?.cancel()
-        return super.onKeyLongPress(keyCode, event)
+    private fun initializer() {
+        binding.playerView.findViewById<DefaultTimeBar>(R.id.exo_progress)
+            .addListener(object : TimeBar.OnScrubListener {
+                override fun onScrubStart(timeBar: TimeBar, position: Long) {
+                    exoplayer.pause()
+                    thumbnailPosition(position)
+                }
+
+                override fun onScrubMove(timeBar: TimeBar, position: Long) {
+                    thumbnailPosition(position)
+                }
+
+                override fun onScrubStop(timeBar: TimeBar, position: Long, canceled: Boolean) {
+                    thumbnailPosition(position)
+                    val newPosition = (position) * 1000
+                    updateScrub(newPosition)
+                }
+            })
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
         when (keyCode) {
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
                 if (!exoplayer.isPlaying) {
+                    exoplayer.prepare()
+
                     exoplayer.play()
-                    currentJob?.cancel()
                     binding.previewImage.visibility = View.GONE
                 }
                 return true
@@ -117,24 +102,35 @@ class MainActivity : FragmentActivity() {
 
     private fun updateScrub(position: Long) {
         val currentTime = System.currentTimeMillis()
-        if (currentTime - lastUpdate < 200) return
-        lastUpdate = currentTime
-        currentJob?.cancel()
-
-        currentJob = coroutineScope.launch(Dispatchers.IO) {
-            val bitmap = retriever.getFrameAtTime(
-                position * 1000,
-                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-            )
-            withContext(Dispatchers.Main) {
-                if (bitmap != null) {
-                    binding.previewImage.setImageBitmap(bitmap)
-                    exoplayer.play()
-                }
+        if (currentTime - lastUpdateTime < 100) return
+        lastUpdateTime = currentTime
+        currentThread?.let {
+            if (!it.isInterrupted) {
+                it.interrupt()
             }
         }
-    }
 
+        currentThread = Thread {
+            try {
+
+                runOnUiThread {
+                    val bitmap: Bitmap? = retriever.getFrameAtTime(
+                        position,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                    )
+                    bitmap?.let {
+                        Glide.with(applicationContext).load(bitmap).into(binding.previewImage)
+                        binding.previewImage.visibility = View.VISIBLE
+
+                    }
+                }
+                currentThread?.interrupt()
+            } catch (_: InterruptedException) {
+            }
+        }
+        currentThread?.start()
+
+    }
 
     private fun thumbnailPosition(position: Long) {
         val timeBarWidth = binding.playerView.findViewById<DefaultTimeBar>(R.id.exo_progress).width
@@ -155,29 +151,15 @@ class MainActivity : FragmentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        coroutineScope.cancel()
         currentJob?.cancel()
         exoplayer.release()
-        handler.removeCallbacks(visibilityCheckRunnable)
         retriever.release()
     }
 
-    private fun startVisibilityChecks() {
-        handler.postDelayed(visibilityCheckRunnable, 100)  // Check every 100ms (adjust as needed)
-    }
-
-    // Check if the controls are visible or not
-    @OptIn(UnstableApi::class)
-    private fun checkControlsVisibility() {
-        if (binding.previewImage.visibility == View.VISIBLE) {
-            binding.previewImage.visibility = View.GONE
-        }
-        handler.postDelayed(visibilityCheckRunnable, 10000)  // Check again after 100ms
-    }
 }
 
 
-///Aggressive Approach
+///Aggressive Approach generating thumbnail in the start
 //
 //class MainActivity : FragmentActivity() {
 //
