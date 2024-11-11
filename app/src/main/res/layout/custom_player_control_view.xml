@@ -44,26 +44,21 @@
           style="@style/ExoStyledControls.TimeText.Duration"/>
 
     </LinearLayout>
-
-    <LinearLayout android:id="@id/exo_basic_controls"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toBottomOf="parent"
-        android:layoutDirection="ltr">
-
-      <ImageButton android:id="@+id/exo_subtitle"
-          style="@style/ExoStyledControls.Button.Bottom.CC"/>
-
       <ImageButton android:id="@+id/exo_settings"
+          app:layout_constraintEnd_toEndOf="parent"
+          app:layout_constraintTop_toTopOf="parent"
+          app:layout_constraintBottom_toBottomOf="parent"
           style="@style/ExoStyledControls.Button.Bottom.Settings"/>
 
-    </LinearLayout>
+    <ImageButton
+        android:id="@+id/exo_subtitle"
+        style="@style/ExoStyledControls.Button.Bottom.CC"
+        app:layout_constraintEnd_toStartOf="@id/exo_settings"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"/>
+
   </androidx.constraintlayout.widget.ConstraintLayout>
-
-
-  <androidx.media3.ui.DefaultTimeBar
+    <androidx.media3.ui.DefaultTimeBar
       android:id="@+id/exo_progress"
       android:layout_width="match_parent"
       android:layout_height="@dimen/exo_styled_progress_layout_height"
