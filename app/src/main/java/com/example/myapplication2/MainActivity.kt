@@ -154,35 +154,25 @@ class MainActivity : FragmentActivity() {
                 it.interrupt()
             }
         }
-        handler.removeCallbacksAndMessages(null) // Remove previous requests
-        handler.postDelayed({
-            val bitmap: Bitmap? = retriever.getFrameAtTime(
-                position,
-                MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-            )
-            bitmap?.let {
-                Glide.with(applicationContext).load(bitmap).into(binding.previewImage)
-                binding.previewImage.visibility = View.VISIBLE
+
+        currentThread = Thread {
+            try {
+
+                runOnUiThread {
+                    val bitmap: Bitmap? = retriever.getFrameAtTime(
+                        position,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                    )
+                    bitmap?.let {
+                        Glide.with(applicationContext).load(bitmap).into(binding.previewImage)
+                        binding.previewImage.visibility = View.VISIBLE
+
+                    }
+                }
+                currentThread?.interrupt()
+            } catch (_: InterruptedException) {
             }
-        }, 100)
-//        currentThread = Thread {
-//            try {
-//
-//                runOnUiThread {
-//                    val bitmap: Bitmap? = retriever.getFrameAtTime(
-//                        position,
-//                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-//                    )
-//                    bitmap?.let {
-//                        Glide.with(applicationContext).load(bitmap).into(binding.previewImage)
-//                        binding.previewImage.visibility = View.VISIBLE
-//
-//                    }
-//                }
-//                currentThread?.interrupt()
-//            } catch (_: InterruptedException) {
-//            }
-//        }
+        }
         currentThread?.start()
 
     }
